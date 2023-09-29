@@ -3,9 +3,10 @@
 // val.sol : core vault
 //
 
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 interface InvLike {
   function deposit(
@@ -31,7 +32,7 @@ interface InvLike {
 interface PriceProviderLike {
   function price(address ass1, address ass2) external view returns (uint256); // ass1/ass2
 
-  function price(address ass) external view returns (uint256); // usd
+  function price(address ass) external view returns (uint256); // in usd
 }
 
 interface ERC20Like is IERC20 {
@@ -40,7 +41,7 @@ interface ERC20Like is IERC20 {
   function burn(address account, uint256 amt) external;
 }
 
-contract Val {
+contract Val is ReentrancyGuard {
   // ---- Auth ----
   mapping(address => uint) wards;
 
@@ -267,7 +268,7 @@ contract Val {
     address to,
     uint256 amt,
     bool useFee
-  ) internal returns (uint256) {
+  ) internal nonReentrant returns (uint256) {
     require(live == 1, "Vat/not-live");
     require(asss[ass].pos > 0, "Vat/asset not in whitelist");
 
@@ -290,7 +291,7 @@ contract Val {
     address ass,
     address to,
     uint256 amt
-  ) external returns (uint256) {
+  ) external nonReentrant returns (uint256) {
     require(live == 1, "Vat/not-live");
     require(asss[ass].pos > 0, "Vat/asset not in whitelist");
 
