@@ -10,15 +10,15 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface ERC20Like is IERC20 {
-  function mint(address, uint256) external;
+  function mint(address, uint) external;
 
-  function burn(address, uint256) external;
+  function burn(address, uint) external;
 }
 
 contract Vex is ReentrancyGuard, ERC721 {
   // ---- Auth ----
   mapping(address => uint) wards;
-  uint256 public live;
+  uint public live;
 
   modifier auth() {
     require(wards[msg.sender] == 1, "Val/not-authorized");
@@ -43,12 +43,12 @@ contract Vex is ReentrancyGuard, ERC721 {
   event Deny(address indexed usr);
 
   ERC20Like public token;
-  uint256 public tokenId; // current
+  uint public tokenId; // current
 
   struct Pow {
-    uint256 balance;
-    uint256 start;
-    Long long;
+    uint balance;
+    uint start;
+    uint long;
   }
 
   enum Long {
@@ -59,11 +59,11 @@ contract Vex is ReentrancyGuard, ERC721 {
     FOURYEAR
   }
 
-  uint256 public constant POW_DIVISOR = 1000000;
+  uint public constant POW_DIVISOR = 1000000;
 
-  mapping(uint256 => Pow) public pows; // key is tokenId
-  mapping(Long => uint256) public mults;
-  mapping(Long => uint256) public longs;
+  mapping(uint => Pow) public pows; // key is tokenId
+  mapping(uint => uint) public mults;
+  mapping(uint => uint) public longs;
 
   constructor(
     string memory name_,
@@ -74,47 +74,43 @@ contract Vex is ReentrancyGuard, ERC721 {
     live = 1;
     wards[msg.sender] = 1;
 
-    longs[Long.ONEMON] = 30 days;
-    longs[Long.SIXMON] = 180 days;
-    longs[Long.ONEYEAR] = 365 days;
-    longs[Long.TWOYEAR] = longs[Long.ONEYEAR] * 2;
-    longs[Long.FOURYEAR] = longs[Long.TWOYEAR] * 2;
+    longs[uint(Long.ONEMON)] = 30 days;
+    longs[uint(Long.SIXMON)] = 180 days;
+    longs[uint(Long.ONEYEAR)] = 365 days;
+    longs[uint(Long.TWOYEAR)] = longs[uint(Long.ONEYEAR)] * 2;
+    longs[uint(Long.FOURYEAR)] = longs[uint(Long.TWOYEAR)] * 2;
 
-    // base rate = 1.02
+    // base rate = 1.05
     // ONEMON = 1.05, SIXMON = 1.05 ** 4, ONEYEAR = 1.05 ** 9, 16, 25 ...
-    mults[Long.ONEMON] = 1050000;
-    mults[Long.SIXMON] = 1215506;
-    mults[Long.ONEYEAR] = 1551328;
-    mults[Long.TWOYEAR] = 2208241;
-    mults[Long.FOURYEAR] = 3386354;
+    mults[uint(Long.ONEMON)] = 1050000;
+    mults[uint(Long.SIXMON)] = 1215506;
+    mults[uint(Long.ONEYEAR)] = 1551328;
+    mults[uint(Long.TWOYEAR)] = 2208241;
+    mults[uint(Long.FOURYEAR)] = 3386354;
   }
 
-  function setMults(uint256[] memory mults_) public auth {
-    require(
-      mults_.length == uint256(Long.FOURYEAR) + 1,
-      "Vex/mults length is invilid"
-    );
+  function stop() external auth {
+    live = 0;
+  }
+
+  function setMults(uint[] memory mults_) public auth {
     for (uint i = 0; i < mults_.length; i++) {
-      mults[Long(i)] = mults_[i];
+      mults[i] = mults_[i];
     }
   }
 
-  function setLongs(uint256[] memory longs_) public auth {
-    require(
-      longs_.length == uint256(Long.FOURYEAR) + 1,
-      "Vex/longs length is invilid"
-    );
+  function setLongs(uint[] memory longs_) public auth {
     for (uint i = 0; i < longs_.length; i++) {
-      longs[Long(i)] = longs_[i];
+      longs[i] = longs_[i];
     }
   }
 
-  function power(uint256 tokenId_) public view returns (uint256) {
-    Long l = pows[tokenId_].long;
+  function power(uint tokenId_) public view returns (uint) {
+    uint l = pows[tokenId_].long;
     return (mults[l] * pows[tokenId_].balance) / POW_DIVISOR;
   }
 
-  function deposit(uint256 amt, Long long) external returns (uint256) {
+  function deposit(uint amt, uint long) external returns (uint) {
     token.transferFrom(msg.sender, address(this), amt);
     tokenId++;
     pows[tokenId] = Pow(amt, block.timestamp, long);
@@ -122,15 +118,15 @@ contract Vex is ReentrancyGuard, ERC721 {
     return tokenId;
   }
 
-  function withdraw(uint256 tokenId_) external nonReentrant {
+  function withdraw(uint tokenId_) external nonReentrant {
     require(ownerOf(tokenId_) == msg.sender, "Vex/tokenId not belong you");
-    uint256 start = pows[tokenId_].start;
-    Long long = pows[tokenId_].long;
+    uint start = pows[tokenId_].start;
+    uint long = pows[tokenId_].long;
     require(block.timestamp >= start + longs[long], "Vex/time is't up");
     _burn(tokenId_);
-    uint256 amt = pows[tokenId_].balance;
+    uint amt = pows[tokenId_].balance;
     token.transfer(msg.sender, amt);
-    uint256 reward = power(tokenId_) - amt;
+    uint reward = power(tokenId_) - amt;
     token.mint(msg.sender, reward);
     delete pows[tokenId_];
   }

@@ -11,7 +11,6 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 contract Token is OFTV2, Pausable {
   // ---- Auth ----
   mapping(address => uint) wards;
-  uint256 public live;
 
   modifier auth() {
     require(wards[msg.sender] == 1, "Val/not-authorized");
@@ -19,14 +18,12 @@ contract Token is OFTV2, Pausable {
   }
 
   function rely(address usr) external auth {
-    require(live == 1, "Vat/not-live");
     wards[usr] = 1;
 
     emit Rely(usr);
   }
 
   function deny(address usr) external auth {
-    require(live == 1, "Vat/not-live");
     wards[usr] = 0;
 
     emit Deny(usr);
@@ -62,11 +59,11 @@ contract Token is OFTV2, Pausable {
     return super._debitFrom(from, dstChainId, toAddr, amount);
   }
 
-  function mint(address account, uint256 amt) external auth {
+  function mint(address account, uint amt) external whenNotPaused auth {
     _mint(account, amt);
   }
 
-  function burn(address account, uint256 amt) external auth {
+  function burn(address account, uint amt) external whenNotPaused auth {
     _burn(account, amt);
   }
 }

@@ -11,34 +11,34 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 interface InvLike {
   function deposit(
     address[] memory asss_,
-    uint256[] memory amts_,
+    uint[] memory amts_,
     address reward
   ) external;
 
-  function withdraw(address[] memory asss_, uint256[] memory amts_) external;
+  function withdraw(address[] memory asss_, uint[] memory amts_) external;
 
   function claim() external;
 
   function depositedAmount(
     address usr,
     address ass
-  ) external view returns (uint256);
+  ) external view returns (uint);
 
-  function rewards(address usr, address ass) external view returns (uint256);
+  function rewards(address usr, address ass) external view returns (uint);
 
   function rewardTokens(address usr) external view returns (address[] memory);
 }
 
 interface PriceProviderLike {
-  function price(address ass1, address ass2) external view returns (uint256); // ass1/ass2
+  function price(address ass1, address ass2) external view returns (uint); // ass1/ass2
 
-  function price(address ass) external view returns (uint256); // in usd
+  function price(address ass) external view returns (uint); // in usd
 }
 
 interface ERC20Like is IERC20 {
-  function mint(address account, uint256 amt) external;
+  function mint(address account, uint amt) external;
 
-  function burn(address account, uint256 amt) external;
+  function burn(address account, uint amt) external;
 }
 
 contract Val is ReentrancyGuard {
@@ -65,14 +65,14 @@ contract Val is ReentrancyGuard {
   }
 
   struct Ass {
-    uint256 min; // min persent
-    uint256 max; // max persent
-    uint256 pos;
+    uint min; // min persent
+    uint max; // max persent
+    uint pos;
   }
 
   struct Inv {
-    uint256 max;
-    uint256 amt;
+    uint max;
+    uint amt;
   }
 
   mapping(address => Ass) public asss;
@@ -80,12 +80,12 @@ contract Val is ReentrancyGuard {
   address[] invetors;
   address[] tokens;
 
-  uint256 public live; // active flag
+  uint public live; // active flag
   PriceProviderLike public priceProvider;
   ERC20Like public core; // TDT, TCAv1, TCAV2
 
-  uint256 constant ONE = 1.00E18;
-  uint256 constant PENSENT_DIVISOR = 10000;
+  uint constant ONE = 1.00E18;
+  uint constant PENSENT_DIVISOR = 10000;
 
   event Rely(address indexed usr);
   event Deny(address indexed usr);
@@ -102,7 +102,7 @@ contract Val is ReentrancyGuard {
     live = 0;
   }
 
-  function setAsset(address ass, uint256 min, uint256 max) external auth {
+  function setAsset(address ass, uint min, uint max) external auth {
     require(live == 1, "Vat/not-live");
     require(max > 0, "Vat/max persent error");
 
@@ -114,7 +114,7 @@ contract Val is ReentrancyGuard {
   }
 
   function removeAsset(address ass) external auth {
-    uint256 pos = asss[ass].pos;
+    uint pos = asss[ass].pos;
     require(pos > 0, "Val/asset not in whitelist");
     address a = tokens[tokens.length - 1];
     tokens[pos] = a;
@@ -130,7 +130,7 @@ contract Val is ReentrancyGuard {
     priceProvider = PriceProviderLike(pp);
   }
 
-  function setInv(address ass, address inv, uint256 max) external auth {
+  function setInv(address ass, address inv, uint max) external auth {
     require(live == 1, "Vat/not-live");
     require(asss[ass].pos > 0, "Val/asset not in whitelist");
 
@@ -148,69 +148,66 @@ contract Val is ReentrancyGuard {
     invs[ass][inv].max = max;
   }
 
-  function invetMax(address ass, address inv) public view returns (uint256) {
-    uint256 balance = assetAmount(ass);
-    uint256 maxPersent = invs[ass][inv].max;
-    uint256 max = (balance * maxPersent) / PENSENT_DIVISOR;
+  function invetMax(address ass, address inv) public view returns (uint) {
+    uint balance = assetAmount(ass);
+    uint maxPersent = invs[ass][inv].max;
+    uint max = (balance * maxPersent) / PENSENT_DIVISOR;
     InvLike invetor = InvLike(inv);
-    uint256 damt = invetor.depositedAmount(address(this), ass);
+    uint damt = invetor.depositedAmount(address(this), ass);
     if (max > damt) {
       return max - damt;
     }
     return 0;
   }
 
-  function assetAmount(address ass) public view returns (uint256) {
+  function assetAmount(address ass) public view returns (uint) {
     IERC20 token = IERC20(ass);
-    uint256 balance = token.balanceOf(address(this));
+    uint balance = token.balanceOf(address(this));
     for (uint i = 0; i < invetors.length; i++) {
       InvLike invetor = InvLike(invetors[i]);
-      uint256 damt = invetor.depositedAmount(address(this), ass);
-      uint256 rewards = invetor.rewards(address(this), ass);
+      uint damt = invetor.depositedAmount(address(this), ass);
+      uint rewards = invetor.rewards(address(this), ass);
       balance = balance + rewards + damt;
     }
     return balance;
   }
 
-  function assetValue(address ass) public view returns (uint256) {
-    uint256 balance = assetAmount(ass);
-    uint256 value = (priceProvider.price(ass) * balance) / ONE;
+  function assetValue(address ass) public view returns (uint) {
+    uint balance = assetAmount(ass);
+    uint value = (priceProvider.price(ass) * balance) / ONE;
     return value;
   }
 
-  function totalValue() public view returns (uint256) {
-    uint256 total = 0;
+  function totalValue() public view returns (uint) {
+    uint total = 0;
     for (uint i = 1; i < tokens.length; i++) {
       total += assetValue(tokens[i]);
     }
     return total;
   }
 
-  function _assetPersent(
-    address ass,
-    int256 amt
-  ) internal view returns (uint256) {
+  function _assetPersent(address ass, int256 amt) internal view returns (uint) {
     int256 total = int256(totalValue());
     int256 assVal = int256(assetValue(ass));
     int256 dval = (int256(priceProvider.price(ass)) * amt) / int256(ONE);
     total += dval;
     assVal += dval;
     require(assVal > 0, "Val/asset is 0");
-    return (PENSENT_DIVISOR * uint256(assVal)) / uint256(total);
+    return (PENSENT_DIVISOR * uint(assVal)) / uint(total);
   }
 
-  function assetPersent(address ass) public view returns (uint256) {
+  function assetPersent(address ass) public view returns (uint) {
     return _assetPersent(ass, 0);
   }
 
   function deposit(
     address[] memory asss_,
-    uint256[] memory amts_,
+    uint[] memory amts_,
     address inv_
   ) external auth {
     for (uint i = 0; i < asss_.length; i++) {
-      uint256 amt = amts_[i];
-      uint256 max = invetMax(asss_[i], inv_);
+      uint amt = amts_[i];
+      uint max = invetMax(asss_[i], inv_);
       require(amt <= max, "Val/amt error");
       IERC20 ass = IERC20(asss_[i]);
       ass.approve(inv_, amt);
@@ -220,45 +217,41 @@ contract Val is ReentrancyGuard {
 
   function withdraw(
     address[] memory asss_,
-    uint256[] memory amts_,
+    uint[] memory amts_,
     address inv_
   ) external auth {
     InvLike(inv_).withdraw(asss_, amts_);
   }
 
-  function buyFee(address ass, uint256 amt) public view returns (uint256) {
-    uint256 p = _assetPersent(ass, int256(amt));
+  function buyFee(address ass, uint amt) public view returns (uint) {
+    uint p = _assetPersent(ass, int256(amt));
     if (p <= asss[ass].max) {
       return 0;
     }
-    uint256 exc = p - asss[ass].max;
+    uint exc = p - asss[ass].max;
     return (exc * amt) / PENSENT_DIVISOR / 10;
   }
 
-  function sellFee(address ass, uint256 amt) public view returns (uint256) {
-    uint256 p = _assetPersent(ass, -int256(amt));
+  function sellFee(address ass, uint amt) public view returns (uint) {
+    uint p = _assetPersent(ass, -int256(amt));
     if (p >= asss[ass].min) {
       return 0;
     }
-    uint256 exc = asss[ass].min - p;
+    uint exc = asss[ass].min - p;
     return (exc * amt) / PENSENT_DIVISOR / 10;
   }
 
   // no buy fee
   function initAssets(
     address[] memory asss_,
-    uint256[] memory amts_
+    uint[] memory amts_
   ) external auth {
     for (uint i = 0; i < asss_.length; i++) {
       _buy(asss_[i], msg.sender, amts_[i], false);
     }
   }
 
-  function buy(
-    address ass,
-    address to,
-    uint256 amt
-  ) external returns (uint256) {
+  function buy(address ass, address to, uint amt) external returns (uint) {
     return _buy(ass, to, amt, true);
   }
 
@@ -266,21 +259,21 @@ contract Val is ReentrancyGuard {
   function _buy(
     address ass,
     address to,
-    uint256 amt,
+    uint amt,
     bool useFee
-  ) internal nonReentrant returns (uint256) {
+  ) internal nonReentrant returns (uint) {
     require(live == 1, "Vat/not-live");
     require(asss[ass].pos > 0, "Vat/asset not in whitelist");
 
     IERC20 token = IERC20(ass);
     token.transferFrom(msg.sender, address(this), amt);
 
-    uint256 fee = 0;
+    uint fee = 0;
     if (useFee) {
       fee = buyFee(ass, amt);
     }
-    uint256 price = priceProvider.price(address(core), ass); // tdt/ass
-    uint256 max = price * (amt - fee);
+    uint price = priceProvider.price(address(core), ass); // tdt/ass
+    uint max = price * (amt - fee);
 
     core.mint(to, max);
     return max;
@@ -290,16 +283,16 @@ contract Val is ReentrancyGuard {
   function sell(
     address ass,
     address to,
-    uint256 amt
-  ) external nonReentrant returns (uint256) {
+    uint amt
+  ) external nonReentrant returns (uint) {
     require(live == 1, "Vat/not-live");
     require(asss[ass].pos > 0, "Vat/asset not in whitelist");
 
     core.burn(msg.sender, amt);
 
-    uint256 price = priceProvider.price(ass, address(core)); // ass/tdt
-    uint256 max = price * amt;
-    uint256 fee = sellFee(ass, max);
+    uint price = priceProvider.price(ass, address(core)); // ass/tdt
+    uint max = price * amt;
+    uint fee = sellFee(ass, max);
     max = max - fee;
 
     IERC20 token = IERC20(ass);
