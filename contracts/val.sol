@@ -7,6 +7,8 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 interface InvLike {
   function deposit(
@@ -42,6 +44,10 @@ interface ERC20Like is IERC20 {
 }
 
 contract Val is ReentrancyGuard {
+  using SafeERC20 for IERC20;
+  using SafeERC20 for ERC20Like;
+  using SafeMath for uint;
+
   // ---- Auth ----
   mapping(address => uint) wards;
 
@@ -151,7 +157,7 @@ contract Val is ReentrancyGuard {
   function invetMax(address ass, address inv) public view returns (uint) {
     uint balance = assetAmount(ass);
     uint maxPersent = invs[ass][inv].max;
-    uint max = (balance * maxPersent) / PENSENT_DIVISOR;
+    uint max = balance.mul(maxPersent).div(PENSENT_DIVISOR);
     InvLike invetor = InvLike(inv);
     uint damt = invetor.depositedAmount(address(this), ass);
     if (max > damt) {
@@ -167,7 +173,7 @@ contract Val is ReentrancyGuard {
       InvLike invetor = InvLike(invetors[i]);
       uint damt = invetor.depositedAmount(address(this), ass);
       uint rewards = invetor.rewards(address(this), ass);
-      balance = balance + rewards + damt;
+      balance = balance.add(rewards).add(damt);
     }
     return balance;
   }
@@ -193,7 +199,7 @@ contract Val is ReentrancyGuard {
     total += dval;
     assVal += dval;
     require(assVal > 0, "Val/asset is 0");
-    return (PENSENT_DIVISOR * uint(assVal)) / uint(total);
+    return PENSENT_DIVISOR.mul(uint(assVal)).div(uint(total));
   }
 
   function assetPersent(address ass) public view returns (uint) {
@@ -204,13 +210,13 @@ contract Val is ReentrancyGuard {
     address[] memory asss_,
     uint[] memory amts_,
     address inv_
-  ) external auth {
+  ) external auth nonReentrant {
     for (uint i = 0; i < asss_.length; i++) {
       uint amt = amts_[i];
       uint max = invetMax(asss_[i], inv_);
       require(amt <= max, "Val/amt error");
       IERC20 ass = IERC20(asss_[i]);
-      ass.approve(inv_, amt);
+      ass.safeApprove(inv_, amt);
     }
     InvLike(inv_).deposit(asss_, amts_, address(this));
   }
@@ -219,7 +225,7 @@ contract Val is ReentrancyGuard {
     address[] memory asss_,
     uint[] memory amts_,
     address inv_
-  ) external auth {
+  ) external auth nonReentrant {
     InvLike(inv_).withdraw(asss_, amts_);
   }
 
@@ -229,7 +235,7 @@ contract Val is ReentrancyGuard {
       return 0;
     }
     uint exc = p - asss[ass].max;
-    return (exc * amt) / PENSENT_DIVISOR / 10;
+    return exc.mul(amt).div(PENSENT_DIVISOR).div(10);
   }
 
   function sellFee(address ass, uint amt) public view returns (uint) {
@@ -238,7 +244,7 @@ contract Val is ReentrancyGuard {
       return 0;
     }
     uint exc = asss[ass].min - p;
-    return (exc * amt) / PENSENT_DIVISOR / 10;
+    return exc.mul(amt).div(PENSENT_DIVISOR).div(10);
   }
 
   // no buy fee
@@ -266,14 +272,14 @@ contract Val is ReentrancyGuard {
     require(asss[ass].pos > 0, "Vat/asset not in whitelist");
 
     IERC20 token = IERC20(ass);
-    token.transferFrom(msg.sender, address(this), amt);
+    token.safeTransferFrom(msg.sender, address(this), amt);
 
     uint fee = 0;
     if (useFee) {
       fee = buyFee(ass, amt);
     }
     uint price = priceProvider.price(address(core), ass); // tdt/ass
-    uint max = price * (amt - fee);
+    uint max = price.mul(amt.sub(fee));
 
     core.mint(to, max);
     return max;
@@ -291,12 +297,12 @@ contract Val is ReentrancyGuard {
     core.burn(msg.sender, amt);
 
     uint price = priceProvider.price(ass, address(core)); // ass/tdt
-    uint max = price * amt;
+    uint max = price.mul(amt);
     uint fee = sellFee(ass, max);
-    max = max - fee;
+    max = max.sub(fee);
 
     IERC20 token = IERC20(ass);
-    token.transfer(to, max);
+    token.safeTransfer(to, max);
     return max;
   }
 }

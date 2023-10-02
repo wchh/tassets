@@ -8,6 +8,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 interface ERC20Like is IERC20 {
   function mint(address, uint) external;
@@ -16,6 +18,10 @@ interface ERC20Like is IERC20 {
 }
 
 contract Vex is ReentrancyGuard, ERC721 {
+  using SafeERC20 for ERC20Like;
+  using SafeERC20 for IERC20;
+  using SafeMath for uint;
+  using SafeMath for uint256;
   // ---- Auth ----
   mapping(address => uint) wards;
   uint public live;
@@ -62,6 +68,7 @@ contract Vex is ReentrancyGuard, ERC721 {
   uint public constant POW_DIVISOR = 1000000;
 
   mapping(uint => Pow) public pows; // key is tokenId
+  mapping(address => uint[]) public votes; // key is voter, value is tokenIds
   mapping(uint => uint) public mults;
   mapping(uint => uint) public longs;
 
@@ -107,14 +114,17 @@ contract Vex is ReentrancyGuard, ERC721 {
 
   function power(uint tokenId_) public view returns (uint) {
     uint l = pows[tokenId_].long;
-    return (mults[l] * pows[tokenId_].balance) / POW_DIVISOR;
+    uint balance = pows[tokenId_].balance;
+    uint mult = mults[l];
+    return mult.mul(balance).div(POW_DIVISOR);
   }
 
-  function deposit(uint amt, uint long) external returns (uint) {
-    token.transferFrom(msg.sender, address(this), amt);
+  function deposit(uint amt, uint long) external nonReentrant returns (uint) {
+    SafeERC20.safeTransferFrom(token, msg.sender, address(this), amt);
     tokenId++;
     pows[tokenId] = Pow(amt, block.timestamp, long);
     _mint(msg.sender, tokenId);
+    votes[msg.sender].push(tokenId);
     return tokenId;
   }
 
@@ -123,11 +133,27 @@ contract Vex is ReentrancyGuard, ERC721 {
     uint start = pows[tokenId_].start;
     uint long = pows[tokenId_].long;
     require(block.timestamp >= start + longs[long], "Vex/time is't up");
-    _burn(tokenId_);
+
     uint amt = pows[tokenId_].balance;
-    token.transfer(msg.sender, amt);
-    uint reward = power(tokenId_) - amt;
+    uint reward = power(tokenId_).sub(amt);
+
+    _burn(tokenId_);
+    token.safeTransfer(msg.sender, amt);
     token.mint(msg.sender, reward);
     delete pows[tokenId_];
+  }
+
+  // for snapshot, vote use address of voter, all vote power
+  function votePowers(address user) external view returns (uint) {
+    uint[] memory ids = votes[user];
+    uint p = 0;
+    for (uint i = 0; i < ids.length; i++) {
+      uint id = ids[i];
+      if (ownerOf(id) != user) {
+        continue;
+      }
+      p += power(id);
+    }
+    return p;
   }
 }
