@@ -80,13 +80,13 @@ contract Vex is ReentrancyGuard, ERC721 {
     longs[uint(Long.TWOYEAR)] = longs[uint(Long.ONEYEAR)] * 2;
     longs[uint(Long.FOURYEAR)] = longs[uint(Long.TWOYEAR)] * 2;
 
-    // base rate = 1.05
-    // ONEMON = 1.05, SIXMON = 1.05 ** 4, ONEYEAR = 1.05 ** 9, 16, 25 ...
-    mults[uint(Long.ONEMON)] = 1050000;
-    mults[uint(Long.SIXMON)] = 1215506;
-    mults[uint(Long.ONEYEAR)] = 1551328;
-    mults[uint(Long.TWOYEAR)] = 2208241;
-    mults[uint(Long.FOURYEAR)] = 3386354;
+    // base rate = 1.025
+    // ONEMON = 1.025, SIXMON = 1.025 ** 6, ONEYEAR = 1.025 ** 12, 24, 48 ...
+    mults[uint(Long.ONEMON)] = 1025000;
+    mults[uint(Long.SIXMON)] = 1159563;
+    mults[uint(Long.ONEYEAR)] = 1344889;
+    mults[uint(Long.TWOYEAR)] = 1808726;
+    mults[uint(Long.FOURYEAR)] = 3271490;
   }
 
   function stop() external auth {
