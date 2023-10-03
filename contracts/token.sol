@@ -17,15 +17,13 @@ contract Token is OFTV2, Pausable {
     _;
   }
 
-  function rely(address usr) external auth {
+  function rely(address usr) external auth whenNotPaused {
     wards[usr] = 1;
-
     emit Rely(usr);
   }
 
-  function deny(address usr) external auth {
+  function deny(address usr) external auth whenNotPaused {
     wards[usr] = 0;
-
     emit Deny(usr);
   }
 
@@ -42,11 +40,11 @@ contract Token is OFTV2, Pausable {
     _mint(msg.sender, init_amount_);
   }
 
-  function pause() public auth {
+  function pause() external auth {
     _pause();
   }
 
-  function unpause() public auth {
+  function unpause() external auth {
     _unpause();
   }
 

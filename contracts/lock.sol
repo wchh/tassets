@@ -6,6 +6,8 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 
 interface ERC20Like is IERC20 {
   function mint(address account, uint amt) external;
@@ -13,27 +15,23 @@ interface ERC20Like is IERC20 {
   function burn(address account, uint amt) external;
 }
 
-contract Lock is ReentrancyGuard {
+contract Lock is ReentrancyGuard, Pausable {
+  using SafeMath for uint;
   // ---- Auth ----
   mapping(address => uint) wards;
-  uint public live;
 
   modifier auth() {
     require(wards[msg.sender] == 1, "Val/not-authorized");
     _;
   }
 
-  function rely(address usr) external auth {
-    require(live == 1, "Vat/not-live");
+  function rely(address usr) external auth whenNotPaused {
     wards[usr] = 1;
-
     emit Rely(usr);
   }
 
-  function deny(address usr) external auth {
-    require(live == 1, "Vat/not-live");
+  function deny(address usr) external auth whenNotPaused {
     wards[usr] = 0;
-
     emit Deny(usr);
   }
 
@@ -43,6 +41,7 @@ contract Lock is ReentrancyGuard {
   ERC20Like public token;
 
   mapping(bytes32 => uint) public remains;
+  mapping(bytes32 => uint) public minted;
   mapping(bytes32 => address) public addrs;
   mapping(bytes32 => uint) public cycle;
   mapping(bytes32 => uint) public cycleMinted;
@@ -81,7 +80,6 @@ contract Lock is ReentrancyGuard {
     address team_,
     address lpFund_
   ) {
-    live = 1;
     wards[msg.sender] = 1;
     token = ERC20Like(token_);
     addrs["dao"] = dao_;
@@ -107,58 +105,57 @@ contract Lock is ReentrancyGuard {
     lpNext = remains["lpFund"] / 52 / 5;
   }
 
-  function daoMint() external onlyDao nonReentrant {
-    require(remains["dao"] > 0, "Val/no-remain");
-    uint nth = (block.timestamp - start) / cycle["dao"];
-    uint amt = remains["dao"] - cycleMinted["dao"] * nth;
-    require(amt > 0, "Val/no-remain");
+  function pause() external auth {
+    _pause();
+  }
 
-    remains["dao"] -= amt;
-    token.mint(addrs["dao"], amt);
+  function unpause() external auth {
+    _unpause();
+  }
+
+  function daoMint() external onlyDao nonReentrant {
+    uint amt = _mint("dao", start);
     emit DaoMint(addrs["dao"], amt);
   }
 
   function tsaDaoMint() external onlytsaDao nonReentrant {
-    require(remains["tsaDao"] > 0, "Val/no-remain");
-    uint nth = (block.timestamp - start) / cycle["tsaDao"];
-    uint amt = remains["tsaDao"] - cycleMinted["tsaDao"] * nth;
-    require(amt > 0, "Val/no-remain");
-
-    remains["tsaDao"] -= amt;
-    token.mint(addrs["tsaDao"], amt);
+    uint amt = _mint("tsaDao", start);
     emit TsaDaoMint(addrs["tsaDao"], amt);
   }
 
-  function teamMint() external onlyteam nonReentrant returns (uint) {
-    if (block.timestamp - start < initTeamLockLong) {
-      return 0;
-    }
-    uint teamStart = start + initTeamLockLong;
-    require(remains["team"] > 0, "Val/no-remain");
-    uint nth = (block.timestamp - teamStart) / cycle["team"];
-    uint amt = remains["team"] - cycleMinted["team"] * nth;
-    require(amt > 0, "Val/no-remain");
-
-    remains["team"] -= amt;
-    token.mint(addrs["team"], amt);
+  function teamMint() external onlyteam nonReentrant {
+    uint amt = _mint("team", start + initTeamLockLong);
     emit TeamMint(addrs["team"], amt);
-    return amt;
   }
 
   function lpFundMint() external onlylpFund nonReentrant {
-    require(remains["lpFund"] > 0, "Val/no-remain");
-    uint amt = lpNext;
-    if (amt > remains["lpFund"]) {
-      amt = remains["lpFund"];
-    }
-    require(amt > 0, "Val/no-remain");
-
-    remains["lpFund"] -= amt;
-    token.mint(addrs["lpFund"], amt);
+    uint amt = _mint("lpFund", start);
     emit LpFundMint(addrs["lpFund"], amt);
   }
 
   function setLpNext(uint amt) external auth {
     lpNext = amt;
+  }
+
+  function _mint(
+    bytes32 key,
+    uint start_
+  ) internal whenNotPaused returns (uint) {
+    if (block.timestamp < start_) {
+      return 0;
+    }
+    require(remains[key] > 0, "Val/no-remain");
+    uint nth = block.timestamp.sub(start_).div(cycle[key]);
+    uint amt = cycleMinted[key].mul(nth).sub(minted[key]);
+
+    require(amt >= 0, "Val/allridy-minted");
+    if (remains[key] < amt) {
+      amt = remains[key];
+    }
+
+    remains[key] -= amt;
+    token.mint(addrs[key], amt);
+    minted[key] += amt;
+    return amt;
   }
 }

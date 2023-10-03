@@ -9,6 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 
 interface InvLike {
   function deposit(
@@ -43,7 +44,7 @@ interface ERC20Like is IERC20 {
   function burn(address account, uint amt) external;
 }
 
-contract Val is ReentrancyGuard {
+contract Val is ReentrancyGuard, Pausable {
   using SafeERC20 for IERC20;
   using SafeERC20 for ERC20Like;
   using SafeMath for uint;
@@ -56,17 +57,13 @@ contract Val is ReentrancyGuard {
     _;
   }
 
-  function rely(address usr) external auth {
-    require(live == 1, "Vat/not-live");
+  function rely(address usr) external auth whenNotPaused {
     wards[usr] = 1;
-
     emit Rely(usr);
   }
 
-  function deny(address usr) external auth {
-    require(live == 1, "Vat/not-live");
+  function deny(address usr) external auth whenNotPaused {
     wards[usr] = 0;
-
     emit Deny(usr);
   }
 
@@ -86,9 +83,9 @@ contract Val is ReentrancyGuard {
   address[] invetors;
   address[] tokens;
 
-  uint public live; // active flag
   PriceProviderLike public priceProvider;
   ERC20Like public core; // TDT, TCAv1, TCAV2
+  bool public inited = false;
 
   uint constant ONE = 1.00E18;
   uint constant PENSENT_DIVISOR = 10000;
@@ -100,26 +97,34 @@ contract Val is ReentrancyGuard {
     core = ERC20Like(core_);
     priceProvider = PriceProviderLike(pp);
     wards[msg.sender] = 1;
-    live = 1;
     tokens.push(address(0)); // index 0 is 0
   }
 
-  function stop() external auth {
-    live = 0;
+  function pause() external auth {
+    _pause();
   }
 
-  function setAsset(address ass, uint min, uint max) external auth {
-    require(live == 1, "Vat/not-live");
+  function unpause() external auth {
+    _unpause();
+  }
+
+  function setAsset(
+    address ass,
+    uint min,
+    uint max
+  ) external auth whenNotPaused {
     require(max > 0, "Vat/max persent error");
 
     Ass storage a = asss[ass];
+    if (a.pos == 0) {
+      tokens.push(ass);
+    }
     a.min = min;
     a.max = max;
-    tokens.push(ass);
     a.pos = tokens.length - 1;
   }
 
-  function removeAsset(address ass) external auth {
+  function removeAsset(address ass) external auth whenNotPaused {
     uint pos = asss[ass].pos;
     require(pos > 0, "Val/asset not in whitelist");
     address a = tokens[tokens.length - 1];
@@ -130,14 +135,16 @@ contract Val is ReentrancyGuard {
   }
 
   // price provider
-  function setPriceProvider(address pp) external auth {
-    require(live == 1, "Vat/not-live");
+  function setPriceProvider(address pp) external auth whenNotPaused {
     require(pp != address(0), "Vat/price provider not valid");
     priceProvider = PriceProviderLike(pp);
   }
 
-  function setInv(address ass, address inv, uint max) external auth {
-    require(live == 1, "Vat/not-live");
+  function setInv(
+    address ass,
+    address inv,
+    uint max
+  ) external auth whenNotPaused {
     require(asss[ass].pos > 0, "Val/asset not in whitelist");
 
     bool e = false;
@@ -187,6 +194,7 @@ contract Val is ReentrancyGuard {
   function totalValue() public view returns (uint) {
     uint total = 0;
     for (uint i = 1; i < tokens.length; i++) {
+      // i == 0 is address(0)
       total += assetValue(tokens[i]);
     }
     return total;
@@ -210,7 +218,7 @@ contract Val is ReentrancyGuard {
     address[] memory asss_,
     uint[] memory amts_,
     address inv_
-  ) external auth nonReentrant {
+  ) external auth nonReentrant whenNotPaused {
     for (uint i = 0; i < asss_.length; i++) {
       uint amt = amts_[i];
       uint max = invetMax(asss_[i], inv_);
@@ -252,6 +260,10 @@ contract Val is ReentrancyGuard {
     address[] memory asss_,
     uint[] memory amts_
   ) external auth {
+    if (inited) {
+      return;
+    }
+    inited = true;
     for (uint i = 0; i < asss_.length; i++) {
       _buy(asss_[i], msg.sender, amts_[i], false);
     }
@@ -267,8 +279,7 @@ contract Val is ReentrancyGuard {
     address to,
     uint amt,
     bool useFee
-  ) internal nonReentrant returns (uint) {
-    require(live == 1, "Vat/not-live");
+  ) internal nonReentrant whenNotPaused returns (uint) {
     require(asss[ass].pos > 0, "Vat/asset not in whitelist");
 
     IERC20 token = IERC20(ass);
@@ -290,8 +301,7 @@ contract Val is ReentrancyGuard {
     address ass,
     address to,
     uint amt
-  ) external nonReentrant returns (uint) {
-    require(live == 1, "Vat/not-live");
+  ) external nonReentrant whenNotPaused returns (uint) {
     require(asss[ass].pos > 0, "Vat/asset not in whitelist");
 
     core.burn(msg.sender, amt);
