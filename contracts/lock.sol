@@ -148,7 +148,6 @@ contract Lock is ReentrancyGuard, Pausable {
     uint nth = block.timestamp.sub(start_).div(cycle[key]);
     uint amt = cycleMinted[key].mul(nth).sub(minted[key]);
 
-    require(amt >= 0, "Val/allridy-minted");
     if (remains[key] < amt) {
       amt = remains[key];
     }

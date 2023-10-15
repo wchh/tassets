@@ -76,10 +76,11 @@ contract Val is ReentrancyGuard, Pausable {
   struct Inv {
     uint max;
     uint amt;
+    uint pos;
   }
 
   mapping(address => Ass) public asss;
-  mapping(address => mapping(address => Inv)) public invs;
+  mapping(address => mapping(address => Inv)) public invs; // adv_addr => ass_addk => Inv
   address[] invetors;
   address[] tokens;
 
@@ -146,10 +147,11 @@ contract Val is ReentrancyGuard, Pausable {
     uint max
   ) external auth whenNotPaused {
     require(asss[ass].pos > 0, "Val/asset not in whitelist");
+    invs[inv][ass].max = max;
 
     bool e = false;
     for (uint i = 0; i < invetors.length; i++) {
-      if (invetors[i] == inv) {
+      if (inv == invetors[i]) {
         e = true;
         break;
       }
@@ -157,20 +159,16 @@ contract Val is ReentrancyGuard, Pausable {
     if (!e) {
       invetors.push(inv);
     }
-
-    invs[ass][inv].max = max;
   }
 
   function invetMax(address ass, address inv) public view returns (uint) {
     uint balance = assetAmount(ass);
-    uint maxPersent = invs[ass][inv].max;
+    uint maxPersent = invs[inv][ass].max;
     uint max = balance.mul(maxPersent).div(PENSENT_DIVISOR);
+
     InvLike invetor = InvLike(inv);
     uint damt = invetor.depositedAmount(address(this), ass);
-    if (max > damt) {
-      return max - damt;
-    }
-    return 0;
+    return max.sub(damt);
   }
 
   function assetAmount(address ass) public view returns (uint) {
@@ -187,7 +185,7 @@ contract Val is ReentrancyGuard, Pausable {
 
   function assetValue(address ass) public view returns (uint) {
     uint balance = assetAmount(ass);
-    uint value = (priceProvider.price(ass) * balance) / ONE;
+    uint value = priceProvider.price(ass).mul(balance).div(ONE);
     return value;
   }
 
@@ -261,6 +259,7 @@ contract Val is ReentrancyGuard, Pausable {
     uint[] memory amts_
   ) external auth {
     if (inited) {
+      // exec once
       return;
     }
     inited = true;

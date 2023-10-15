@@ -22,7 +22,7 @@ contract Vex is ReentrancyGuard, Pausable, ERC721 {
   using SafeERC20 for ERC20Like;
   using SafeERC20 for IERC20;
   using SafeMath for uint;
-  using SafeMath for uint256;
+
   // ---- Auth ----
   mapping(address => uint) wards;
 
@@ -118,6 +118,20 @@ contract Vex is ReentrancyGuard, Pausable, ERC721 {
     return mult.mul(balance).div(POW_DIVISOR);
   }
 
+  // for snapshot, vote use address of voter, all vote power
+  function power(address user) external view returns (uint) {
+    uint[] memory ids = votes[user];
+    uint p = 0;
+    for (uint i = 0; i < ids.length; i++) {
+      uint id = ids[i];
+      if (ownerOf(id) != user) {
+        continue;
+      }
+      p += power(id);
+    }
+    return p;
+  }
+
   function deposit(
     uint amt,
     uint long
@@ -145,17 +159,10 @@ contract Vex is ReentrancyGuard, Pausable, ERC721 {
     delete pows[tokenId_];
   }
 
-  // for snapshot, vote use address of voter, all vote power
-  function votePowers(address user) external view returns (uint) {
-    uint[] memory ids = votes[user];
-    uint p = 0;
-    for (uint i = 0; i < ids.length; i++) {
-      uint id = ids[i];
-      if (ownerOf(id) != user) {
-        continue;
-      }
-      p += power(id);
-    }
-    return p;
+  // usr
+  function vesting(uint tokenId_) external returns (uint) {
+    require(ownerOf(tokenId_) == msg.sender, "Vex/tokenId not belong you");
+
+    return 0;
   }
 }
